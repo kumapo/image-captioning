@@ -1,6 +1,7 @@
 input/
 output/
 .build/
+.env
 .kaggle.json
 build.py
 build.sh

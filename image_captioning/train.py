@@ -53,6 +53,8 @@ def main(args: argparse.Namespace):
             return_length=True
         )
         del examples
+        # important: make sure that PAD tokens are ignored by the loss function
+        encoded.input_ids[encoded.input_ids == tokenizer.pad_token_id] = -100
         return {
             "pixel_values": pixel_values.squeeze(),
             "labels": encoded.input_ids,
@@ -69,113 +71,83 @@ def main(args: argparse.Namespace):
         batched=True,
         remove_columns=["image_path","caption"]
     )
-    train_dataloader = torch.utils.data.DataLoader(
-        # https://github.com/huggingface/datasets/discussions/2577
-        train_dataset.shuffle(seed=args.random_seed, buffer_size=1000).take(args.num_train_data).with_format("torch"),
-        # take and skip prevent future calls to shuffle because they lock in the order of the shards. 
-        # You should shuffle your dataset before splitting it.
-        batch_size=args.train_batch_size,
-        num_workers=args.num_workers # must be 1 otherwise a thread crashs
-    )
-    eval_dataloader = torch.utils.data.DataLoader(
-        eval_dataset.take(args.num_valid_data).with_format("torch"),
-        batch_size=args.valid_batch_size,
-        num_workers=args.num_workers # above
+    # train_dataloader = torch.utils.data.DataLoader(
+    #     # https://github.com/huggingface/datasets/discussions/2577
+    #     train_dataset.shuffle(seed=args.random_seed, buffer_size=1000).take(args.num_train_data).with_format("torch"),
+    #     # take and skip prevent future calls to shuffle because they lock in the order of the shards. 
+    #     # You should shuffle your dataset before splitting it.
+    #     batch_size=args.train_batch_size,
+    #     num_workers=args.num_workers # must be 1 otherwise a thread crashs
+    # )
+    # eval_dataloader = torch.utils.data.DataLoader(
+    #     eval_dataset.take(args.num_valid_data).with_format("torch"),
+    #     batch_size=args.valid_batch_size,
+    #     num_workers=args.num_workers # above
+    # )
+    train_dataset = train_dataset.shuffle(seed=args.random_seed, buffer_size=1000).with_format("torch")
+    eval_dataset = eval_dataset.take(args.num_valid_data).with_format("torch")
+
+    max_steps = (args.num_train_epochs * args.num_train_data) // args.train_batch_size
+    print("max_steps: ", max_steps)
+    # https://github.com/NielsRogge/Transformers-Tutorials/blob/master/TrOCR/Fine_tune_TrOCR_on_IAM_Handwriting_Database_using_Seq2SeqTrainer.ipynb
+    training_args = transformers.Seq2SeqTrainingArguments(
+        # https://github.com/huggingface/transformers/issues/12499
+        # num_train_epochs=args.num_train_epochs,
+        max_steps=max_steps,
+        predict_with_generate=True,
+        evaluation_strategy="steps",
+        per_device_train_batch_size=args.train_batch_size,
+        per_device_eval_batch_size=args.valid_batch_size,
+        fp16=False if args.debug else not args.no_fp16, 
+        output_dir=args.output_dir,
+        logging_steps=300,
+        save_steps=300,
+        eval_steps=300,
+        save_total_limit=1,
+        load_best_model_at_end=True,
+        metric_for_best_model='eval_loss',
+        # dataloader_num_workers=args.num_workers,
+        report_to="tensorboard",
+        seed=args.random_seed
     )
 
-    # https://github.com/NielsRogge/Transformers-Tutorials/blob/master/TrOCR/Fine_tune_TrOCR_on_IAM_Handwriting_Database_using_native_PyTorch.ipynb
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model.to(device)
-    optimizer = transformers.AdamW(model.parameters(), lr=args.learning_rate)
     bleu = evaluate.load("bleu")
     meteor = evaluate.load("meteor")
-    for epoch in range(args.num_train_epochs):  # loop over the dataset multiple times
-        # train
-        model.train()
-        train_losses = []
-        for batch in tqdm(train_dataloader):
-            # important: make sure that PAD tokens are ignored by the loss function
-            batch["labels"][batch["labels"] == tokenizer.pad_token_id] = -100
-            # get the inputs        
-            batch = {
-                k: v.to(device)
-                for k,v in batch.items() if k in ("pixel_values","labels")
-            }
-            # forward + backward + optimize
-            outputs = model(**batch)
-            loss = outputs.loss
-            loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
-            del batch
-
-        train_losses.append(loss.item())
-        print(f"Loss after epoch {epoch}:", sum(train_losses)/len(train_losses))
-
-        # evaluate
-        model.eval()
-        outputs = []
-        labels = []
-        with torch.no_grad():
-            for batch in tqdm(eval_dataloader):
-                # run batch generation
-                batch_output = model.generate(batch["pixel_values"].to(device))
-                outputs += tokenizer.batch_decode(
-                    batch_output.cpu().numpy(),
-                    skip_special_tokens=True
-                )
-                labels += tokenizer.batch_decode(
-                    batch["labels"],
-                    skip_special_tokens=True
-                )
-                del batch
-
-        # compute metrics
+    def compute_metrics(pred):
+        labels_ids = pred.label_ids
+        pred_ids = pred.predictions
+        pred_str = tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
+        labels_ids[labels_ids == -100] = tokenizer.pad_token_id
+        label_str = tokenizer.batch_decode(labels_ids, skip_special_tokens=True)
         metrics = {}
         try:
-            metrics.update(bleu.compute(predictions=outputs, references=labels))
+            metrics.update(bleu.compute(predictions=pred_str, references=label_str))
         except ZeroDivisionError as e:
             metrics.update(dict(bleu="nan"))
         try:
-            metrics.update(meteor.compute(predictions=outputs, references=labels))
+            metrics.update(meteor.compute(predictions=pred_str, references=label_str))
         except ZeroDivisionError as e:
             metrics.update(dict(meteor="nan"))
-        print(f"Train metrics after {epoch}:", metrics)
+        return metrics
+
+    # instantiate trainer
+    trainer = transformers.Seq2SeqTrainer(
+        model=model,
+        tokenizer=tokenizer,
+        args=training_args,
+        compute_metrics=compute_metrics,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        data_collator=transformers.default_data_collator,
+    )
+    trainer.train()
 
     # evaluate
-    model.eval()
-    outputs = []
-    labels = []
-    with torch.no_grad():
-        for batch in tqdm(eval_dataloader):
-            # run batch generation
-            batch_output = model.generate(batch["pixel_values"].to(device))
-            outputs += tokenizer.batch_decode(
-                batch_output.cpu().numpy(),
-                skip_special_tokens=True
-            )
-            labels += tokenizer.batch_decode(
-                batch["labels"],
-                skip_special_tokens=True
-            )
-            del batch
-
-    # compute metrics
-    metrics = {}
-    try:
-        metrics.update(bleu.compute(predictions=outputs, references=labels))
-    except ZeroDivisionError as e:
-        metrics.update(dict(bleu="nan"))
-    try:
-        metrics.update(meteor.compute(predictions=outputs, references=labels))
-    except ZeroDivisionError as e:
-        metrics.update(dict(meteor="nan"))
-    print(f"Validation metrics:", metrics)
+    metrics = trainer.evaluate(eval_dataset)
+    print("Validation metrics:", metrics)
 
     # save finally
-    if not os.path.exists('output/'):
-        os.mkdir('output/')
-    model.save_pretrained('output/')
+    model.save_pretrained(args.output_dir)
  
     return
 
@@ -192,16 +164,16 @@ if __name__ == "__main__":
         "--output_dir", default=pathlib.Path('output'), type=pathlib.Path, help=""
     )
     parser.add_argument(
-        "--encoder_model_name_or_path", default="facebook/deit-tiny-patch16-224", type=str, help=""
+        "--encoder_model_name_or_path", default="microsoft/swin-base-patch4-window7-224-in22k", type=str, help=""
     )
     parser.add_argument(
-        "--decoder_model_name_or_path", default="google/electra-small-discriminator", type=str, help=""
+        "--decoder_model_name_or_path", default="bert-base-uncased", type=str, help=""
     )
     parser.add_argument(
         "--max_sequence_length", default=64, type=int, help=""
     )
     parser.add_argument(
-        "--num_train_epochs", default=2, type=int, help=""
+        "--num_train_epochs", default=1, type=int, help=""
     )
     parser.add_argument(
         "--learning_rate", default=5e-5, type=float, help=""
@@ -212,8 +184,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--valid_batch_size", default=32, type=int, help=""
     )
+    # parser.add_argument(
+    #     "--num_workers", default=1, type=int, help=""
+    # )
     parser.add_argument(
-        "--num_workers", default=1, type=int, help=""
+        "--no_fp16", action="store_true", help=""
     )
     parser.add_argument(
         "--random_seed", default=42, type=int, help="Random seed for determinism."

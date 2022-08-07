@@ -8,6 +8,8 @@ transformers = "==4.21.0"
 evaluate = "*"
 datasets = "*"
 torch = "*"
+pillow = "*"
+nltk = "*"
 
 [dev-packages]
 kaggle = "*"
