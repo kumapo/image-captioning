@@ -1,2 +1,9 @@
 input/
 output/
+.build/
+.kaggle.json
+build.py
+build.sh
+debug.py
+template.py
+TODO.md
