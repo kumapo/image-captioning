@@ -155,7 +155,7 @@ def main(args: argparse.Namespace):
     print("Validation metrics:", metrics)
 
     # prediction
-    pred = trainer.predict(eval_dataset[:3], **gen_kwargs)
+    pred = trainer.predict(eval_dataset.take(3).with_format("torch"), **gen_kwargs)
     labels_ids = pred.label_ids
     pred_ids = pred.predictions
     pred_str = tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
