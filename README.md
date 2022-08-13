@@ -8,7 +8,7 @@ An example of image captioning with huggingface's VisionEncoderDecoderModel.
 
 ## Predict
 
-later ;)
+`python -m image_captioning.predict`
 
 ## Installation 
 
