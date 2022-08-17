@@ -8,8 +8,10 @@ import os
 import pathlib
 
 import numpy as np
+import pandas as pd
 
 from tqdm.notebook import tqdm
+
 from .utils import (
     seed_everything,
     save_args
@@ -26,45 +28,46 @@ def main(args: argparse.Namespace):
     tokenizer = transformers.GPT2TokenizerFast.from_pretrained(args.encoder_decoder_model_name_or_path)
     feature_extractor = transformers.ViTFeatureExtractor.from_pretrained(args.encoder_decoder_model_name_or_path)
 
-    eval_dataset = datasets.load_dataset(
+    dataset = datasets.load_dataset(
         "kumapo/coco_dataset_script", "2017",
         data_dir=str(args.valid_data_dir), split="validation", streaming=True
     )
+
     # https://github.com/huggingface/datasets/issues/4675
-    def preprocess_function(examples):
+    def preprocess_function(batch):
         # prepare image (i.e. resize + normalize)
         pixel_values = feature_extractor(
-            [PIL.Image.open(path).convert("RGB") for path in examples['image_path']],
+            [PIL.Image.open(path).convert("RGB") for path in batch['image_path']],
             return_tensors="np"
         ).pixel_values
         # add labels (input_ids) by encoding the text
         encoded = tokenizer(
-            [label for label in examples['caption']], 
+            [label for label in batch['caption']], 
             padding="max_length",
             max_length=args.max_sequence_length,
             return_tensors="np",
             return_length=True
         )
-        del examples
+        del batch
         # important: make sure that PAD tokens are ignored by the loss function
         encoded.input_ids[encoded.input_ids == tokenizer.pad_token_id] = -100
         return {
             "pixel_values": pixel_values.squeeze(),
             "labels": encoded.input_ids,
-            "length": encoded.length
+            # "length": encoded.length
         }
 
-    eval_dataset = eval_dataset.map(
+    dataset = dataset.map(
         preprocess_function,
         batched=True,
-        remove_columns=["image_path","caption"]
+        remove_columns=["image_path","caption_id","caption","coco_url","file_name","height","width"]
     )
     # eval_dataloader = torch.utils.data.DataLoader(
     #     eval_dataset.take(args.num_valid_data).with_format("torch"),
     #     batch_size=args.valid_batch_size,
     #     num_workers=args.num_workers # above
     # )
-    eval_dataset = eval_dataset.take(args.num_valid_data).with_format("torch")
+    eval_dataset = dataset.take(args.num_valid_data).with_format("torch")
 
     # https://github.com/NielsRogge/Transformers-Tutorials/blob/master/TrOCR/Fine_tune_TrOCR_on_IAM_Handwriting_Database_using_Seq2SeqTrainer.ipynb
     training_args = transformers.Seq2SeqTrainingArguments(
@@ -77,8 +80,10 @@ def main(args: argparse.Namespace):
         seed=args.random_seed
     )
 
-    bleu = evaluate.load("bleu")
-    meteor = evaluate.load("meteor")
+    # bleu_metric = datasets.load_metric("sacrebleu")
+    # meteor_metric = datasets.load_metric("meteor")
+    bleu_metric = evaluate.load("bleu")
+    meteor_metric = evaluate.load("meteor")
     def compute_metrics(pred):
         labels_ids = pred.label_ids
         pred_ids = pred.predictions
@@ -87,14 +92,17 @@ def main(args: argparse.Namespace):
         label_str = tokenizer.batch_decode(labels_ids, skip_special_tokens=True)
         metrics = {}
         try:
-            metrics.update(bleu.compute(predictions=pred_str, references=label_str))
+            metrics.update(bleu_metric.compute(predictions=pred_str, references=label_str))
         except ZeroDivisionError as e:
             metrics.update(dict(bleu="nan"))
         try:
-            metrics.update(meteor.compute(predictions=pred_str, references=label_str))
+            metrics.update(meteor_metric.compute(predictions=pred_str, references=label_str))
         except ZeroDivisionError as e:
             metrics.update(dict(meteor="nan"))
         return metrics
+    
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
 
     # instantiate trainer
     trainer = transformers.Seq2SeqTrainer(
@@ -111,23 +119,60 @@ def main(args: argparse.Namespace):
         do_sample=True, 
         max_length=args.max_sequence_length, 
         top_k=50, 
-        top_p=0.95, 
+        top_p=0.9, 
         num_return_sequences=1
     )
     # evaluate
     metrics = trainer.evaluate(eval_dataset, **gen_kwargs)
     print("Validation metrics:", metrics)
- 
+
+    def forward_pass_with_label(batch):
+        #  Creating a tensor from a list of numpy.ndarrays is extremely slow.
+        inputs = {
+            k:torch.tensor(np.array(v)).to(device) for k,v in batch.items()
+            if k in ("pixel_values", "labels")
+        }
+        generated_ids = model.generate(
+            inputs["pixel_values"].to(device),
+            **gen_kwargs,
+        )
+        generated_str = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
+        label_ids = np.array(batch["labels"])
+        label_ids[label_ids == -100] = tokenizer.pad_token_id
+        label_str = tokenizer.batch_decode(label_ids, skip_special_tokens=True)
+        with torch.no_grad():
+            # calc loss manually
+            outputs = model(**inputs)
+            loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
+            loss = loss_fct(outputs.logits.reshape(-1, model.decoder.config.vocab_size), inputs["labels"].view(-1))
+            loss = loss.cpu().numpy().reshape(inputs["labels"].shape[0],-1).sum(axis=1)
+        del inputs
+        return dict(
+            loss=loss,
+            predicted_labels=generated_str,
+            labels=label_str
+        )
+
+    validation = dataset.map(
+        forward_pass_with_label,
+        batched=True, batch_size=args.valid_batch_size,
+        remove_columns=["pixel_values"],
+        drop_last_batch=True
+    )
+    validation = validation._head(args.num_valid_data)
+    valid_df = pd.DataFrame(validation)
+    valid_df.to_csv(args.output_dir / "validation.csv")
+
     # prediction
-    pred = trainer.predict(eval_dataset.take(3).with_format("torch"), **gen_kwargs)
-    labels_ids = pred.label_ids
-    pred_ids = pred.predictions
-    pred_str = tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
-    pred_str = [pred for pred in pred_str]
-    labels_ids[labels_ids == -100] = tokenizer.pad_token_id
-    label_str = tokenizer.batch_decode(labels_ids, skip_special_tokens=True)
-    print("Validation predictions:", pred_str)
-    print("Validation labels:", label_str)
+    # pred = trainer.predict(eval_dataset.take(3).with_format("torch"), **gen_kwargs)
+    # labels_ids = pred.label_ids
+    # pred_ids = pred.predictions
+    # pred_str = tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
+    # pred_str = [pred for pred in pred_str]
+    # labels_ids[labels_ids == -100] = tokenizer.pad_token_id
+    # label_str = tokenizer.batch_decode(labels_ids, skip_special_tokens=True)
+    # print("Validation predictions:", pred_str)
+    # print("Validation labels:", label_str)
 
     return
 
