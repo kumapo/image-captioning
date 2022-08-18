@@ -147,7 +147,7 @@ def main(args: argparse.Namespace):
         do_sample=True, 
         max_length=args.max_sequence_length, 
         top_k=50, 
-        top_p=0.95, 
+        top_p=0.9, 
         num_return_sequences=1
     )
     # evaluate
