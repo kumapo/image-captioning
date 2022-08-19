@@ -70,11 +70,11 @@ def main(args: argparse.Namespace):
     print('train: args=%s' % args.__dict__)
     save_args(args, args.output_dir / 'train_args.json')
 
-    feature_extractor = transformers.DeiTFeatureExtractor.from_pretrained(args.encoder_model_name_or_path)
-    tokenizer = transformers.ElectraTokenizer.from_pretrained(args.decoder_model_name_or_path)
     model = transformers.VisionEncoderDecoderModel.from_encoder_decoder_pretrained(
         args.encoder_model_name_or_path, args.decoder_model_name_or_path
     )
+    feature_extractor = transformers.AutoFeatureExtractor.from_pretrained(args.encoder_model_name_or_path)
+    tokenizer = transformers.AutoTokenizer.from_pretrained(args.decoder_model_name_or_path)
     model.config.decoder_start_token_id = tokenizer.cls_token_id
     model.config.pad_token_id = tokenizer.pad_token_id
 
@@ -217,7 +217,7 @@ def main(args: argparse.Namespace):
         args=training_args,
         compute_metrics=compute_metrics,
         eval_dataset=eval_dataset,
-        data_collator=torch_default_data_collator,
+        data_collator=transformers.default_data_collator,
     )
     # https://github.com/huggingface/transformers/blob/v4.21.1/src/transformers/generation_utils.py#L845
     gen_kwargs = dict(
@@ -231,15 +231,15 @@ def main(args: argparse.Namespace):
     print("Validation metrics:", metrics)
 
     # prediction
-    pred = trainer.predict(eval_dataset, **gen_kwargs)
-    labels_ids = pred.label_ids
-    pred_ids = pred.predictions
-    pred_str = tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
-    pred_str = [pred for pred in pred_str]
-    labels_ids[labels_ids == -100] = tokenizer.pad_token_id
-    label_str = tokenizer.batch_decode(labels_ids, skip_special_tokens=True)
-    print("Validation predictions:", pred_str)
-    print("Validation labels:", label_str)
+    # pred = trainer.predict(eval_dataset, **gen_kwargs)
+    # labels_ids = pred.label_ids
+    # pred_ids = pred.predictions
+    # pred_str = tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
+    # pred_str = [pred for pred in pred_str]
+    # labels_ids[labels_ids == -100] = tokenizer.pad_token_id
+    # label_str = tokenizer.batch_decode(labels_ids, skip_special_tokens=True)
+    # print("Validation predictions:", pred_str)
+    # print("Validation labels:", label_str)
 
     # save finally
     model.save_pretrained(args.output_dir)
@@ -258,10 +258,10 @@ if __name__ == "__main__":
         "--output_dir", default=pathlib.Path('output'), type=pathlib.Path, help=""
     )
     parser.add_argument(
-        "--encoder_model_name_or_path", default="facebook/deit-tiny-patch16-224", type=str, help=""
+        "--encoder_model_name_or_path", default="microsoft/swin-base-patch4-window7-224-in22k", type=str, help=""
     )
     parser.add_argument(
-        "--decoder_model_name_or_path", default="google/electra-small-discriminator", type=str, help=""
+        "--decoder_model_name_or_path", default="bert-base-uncased", type=str, help=""
     )
     parser.add_argument(
         "--max_sequence_length", default=64, type=int, help=""
