@@ -136,16 +136,16 @@ def main(args: argparse.Namespace):
     #     num_workers=args.num_workers # above
     # )
     train_dataset = train_dataset.shuffle(seed=args.random_seed, buffer_size=1000).with_format("torch")
-    eval_dataset = datasets.Dataset.from_dict(
-        eval_dataset._head(args.num_valid_data),
-        features=datasets.Features({
-            "pixel_values": datasets.Array3D(shape=(3, 224, 224), dtype='float32'),
-            "labels": datasets.Sequence(feature=datasets.Value(dtype='int32'), length=args.max_sequence_length)
-        })
-    ).with_format("torch")
-
-    # eval_dataset = datasets.Dataset.from_dict(eval_dataset._head(args.num_valid_data)).with_format("torch")
-    # eval_dataset = eval_dataset.take(args.num_valid_data).with_format("torch")
+    if 0 < args.num_valid_data:
+        eval_dataset = datasets.Dataset.from_dict(
+            eval_dataset._head(args.num_valid_data),
+            features=datasets.Features({
+                "pixel_values": datasets.Array3D(shape=(3, 224, 224), dtype='float32'),
+                "labels": datasets.Sequence(feature=datasets.Value(dtype='int32'), length=args.max_sequence_length)
+            })
+        ).with_format("torch")
+    else:
+        eval_dataset = eval_dataset.with_format("torch")
 
     max_steps = (args.num_train_epochs * args.num_train_data) // args.train_batch_size
     print("max_steps: ", max_steps)
@@ -243,6 +243,7 @@ def main(args: argparse.Namespace):
 
     # save finally
     model.save_pretrained(args.output_dir)
+    feature_extractor.save_pretrained(args.output_dir)
     return
 
 

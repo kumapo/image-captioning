@@ -20,17 +20,21 @@ from .utils import (
 def main(args: argparse.Namespace):
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
-    print('predict: args=%s' % args.__dict__)
-    save_args(args, args.output_dir / 'predict_args.json')
+    print('evaluate: args=%s' % args.__dict__)
+    save_args(args, args.output_dir / 'evaluate_args.json')
 
     # load a fine-tuned image captioning model and corresponding tokenizer and feature extractor
     model = transformers.VisionEncoderDecoderModel.from_pretrained(args.encoder_decoder_model_name_or_path)
-    tokenizer = transformers.GPT2TokenizerFast.from_pretrained(args.encoder_decoder_model_name_or_path)
-    feature_extractor = transformers.ViTFeatureExtractor.from_pretrained(args.encoder_decoder_model_name_or_path)
+    feature_extractor = transformers.AutoFeatureExtractor.from_pretrained(
+        args.preprocessor_name_or_path if args.preprocessor_name_or_path is not None else args.encoder_decoder_model_name_or_path
+    )
+    tokenizer = transformers.AutoTokenizer.from_pretrained(args.encoder_decoder_model_name_or_path)
+    # tokenizer = transformers.GPT2TokenizerFast.from_pretrained(args.encoder_decoder_model_name_or_path)
+    # feature_extractor = transformers.ViTFeatureExtractor.from_pretrained(args.encoder_decoder_model_name_or_path)
 
-    dataset = datasets.load_dataset(
+    test_dataset = datasets.load_dataset(
         "kumapo/coco_dataset_script", "2017",
-        data_dir=str(args.valid_data_dir), split="validation", streaming=True
+        data_dir=str(args.test_data_dir), split=args.test_data_split, streaming=True
     )
 
     # https://github.com/huggingface/datasets/issues/4675
@@ -57,25 +61,35 @@ def main(args: argparse.Namespace):
             # "length": encoded.length
         }
 
-    dataset = dataset.map(
+    test_dataset = test_dataset.map(
         preprocess_function,
         batched=True,
         remove_columns=["image_path","caption_id","caption","coco_url","file_name","height","width"]
     )
     # eval_dataloader = torch.utils.data.DataLoader(
-    #     eval_dataset.take(args.num_valid_data).with_format("torch"),
-    #     batch_size=args.valid_batch_size,
+    #     test_dataset.take(args.num_test_data).with_format("torch"),
+    #     batch_size=args.test_batch_size,
     #     num_workers=args.num_workers # above
     # )
-    eval_dataset = dataset.take(args.num_valid_data).with_format("torch")
+
+    if 0 < args.num_test_data:
+        test_dataset = datasets.Dataset.from_dict(
+            test_dataset._head(args.num_test_data),
+            features=datasets.Features({
+                "pixel_values": datasets.Array3D(shape=(3, 224, 224), dtype='float32'),
+                "labels": datasets.Sequence(feature=datasets.Value(dtype='int32'), length=args.max_sequence_length)
+            })
+        ).with_format("torch")
+    else:
+        test_dataset = test_dataset.with_format("torch")
 
     # https://github.com/NielsRogge/Transformers-Tutorials/blob/master/TrOCR/Fine_tune_TrOCR_on_IAM_Handwriting_Database_using_Seq2SeqTrainer.ipynb
     training_args = transformers.Seq2SeqTrainingArguments(
         predict_with_generate=True,
-        per_device_eval_batch_size=args.valid_batch_size,
+        per_device_eval_batch_size=args.test_batch_size,
         fp16=False if args.debug else not args.no_fp16, 
         output_dir=args.output_dir,
-        # dataloader_num_workers=args.num_workers,
+        dataloader_num_workers=args.num_workers,
         report_to="tensorboard",
         seed=args.random_seed
     )
@@ -110,7 +124,7 @@ def main(args: argparse.Namespace):
         tokenizer=tokenizer,
         args=training_args,
         compute_metrics=compute_metrics,
-        eval_dataset=eval_dataset,
+        eval_dataset=test_dataset,
         data_collator=transformers.default_data_collator,
     )
 
@@ -123,7 +137,7 @@ def main(args: argparse.Namespace):
         num_return_sequences=1
     )
     # evaluate
-    metrics = trainer.evaluate(eval_dataset, **gen_kwargs)
+    metrics = trainer.evaluate(test_dataset, **gen_kwargs)
     print("Validation metrics:", metrics)
 
     def forward_pass_with_label(batch):
@@ -153,18 +167,21 @@ def main(args: argparse.Namespace):
             labels=label_str
         )
 
-    validation = dataset.map(
+    evaluation = test_dataset.map(
         forward_pass_with_label,
-        batched=True, batch_size=args.valid_batch_size,
+        batched=True,
+        batch_size=args.test_batch_size,
         remove_columns=["pixel_values"],
-        drop_last_batch=True
+        drop_last_batch=False
     )
-    validation = validation._head(args.num_valid_data)
-    valid_df = pd.DataFrame(validation)
-    valid_df.to_csv(args.output_dir / "validation.csv")
+    evaluation = evaluation._head(
+        args.num_test_data if 0 < args.num_test_data else 5000
+    )
+    eval_df = pd.DataFrame(evaluation)
+    eval_df.to_csv(args.output_dir / "evaluation.csv")
 
     # prediction
-    # pred = trainer.predict(eval_dataset.take(3).with_format("torch"), **gen_kwargs)
+    # pred = trainer.predict(test_dataset.take(3).with_format("torch"), **gen_kwargs)
     # labels_ids = pred.label_ids
     # pred_ids = pred.predictions
     # pred_str = tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
@@ -180,7 +197,10 @@ def main(args: argparse.Namespace):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--valid_data_dir", default='../input/coco-2017-val/', type=pathlib.Path
+        "--test_data_dir", default='../input/coco-2017-val/', type=pathlib.Path
+    )
+    parser.add_argument(
+        "--test_data_split", default="validation", type=str, help=""
     )
     parser.add_argument(
         "--output_dir", default=pathlib.Path('output'), type=pathlib.Path, help=""
@@ -189,14 +209,17 @@ if __name__ == "__main__":
         "--encoder_decoder_model_name_or_path", default="nlpconnect/vit-gpt2-image-captioning", type=str, help=""
     )
     parser.add_argument(
+        "--preprocessor_name_or_path", default=None, type=str, help=""
+    )
+    parser.add_argument(
         "--max_sequence_length", default=64, type=int, help=""
     )
     parser.add_argument(
-        "--valid_batch_size", default=32, type=int, help=""
+        "--test_batch_size", default=32, type=int, help=""
     )
-    # parser.add_argument(
-    #     "--num_workers", default=1, type=int, help=""
-    # )
+    parser.add_argument(
+        "--num_workers", default=2, type=int, help=""
+    )
     parser.add_argument(
         "--no_fp16", action="store_true", help=""
     )
@@ -204,7 +227,7 @@ if __name__ == "__main__":
         "--random_seed", default=42, type=int, help="Random seed for determinism."
     )
     parser.add_argument(
-        "--num_valid_data", default=2000, type=int, help="number of items to evaluate on dataset."
+        "--num_test_data", default=0, type=int, help="number of items to evaluate on dataset."
     )
     parser.add_argument(
         "--debug", action="store_true",
