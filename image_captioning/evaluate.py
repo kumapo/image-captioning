@@ -94,10 +94,11 @@ def main(args: argparse.Namespace):
         seed=args.random_seed
     )
 
+    bleu = evaluate.load("bleu")
+    rouge = evaluate.load("rouge")
+    meteor = evaluate.load("meteor")
     # bleu_metric = datasets.load_metric("sacrebleu")
     # meteor_metric = datasets.load_metric("meteor")
-    bleu_metric = evaluate.load("bleu")
-    meteor_metric = evaluate.load("meteor")
     def compute_metrics(pred):
         labels_ids = pred.label_ids
         pred_ids = pred.predictions
@@ -106,13 +107,11 @@ def main(args: argparse.Namespace):
         label_str = tokenizer.batch_decode(labels_ids, skip_special_tokens=True)
         metrics = {}
         try:
-            metrics.update(bleu_metric.compute(predictions=pred_str, references=label_str))
+            metrics.update(bleu.compute(predictions=pred_str, references=label_str))
+            metrics.update(rouge.compute(predictions=pred_str, references=label_str))
+            metrics.update(meteor.compute(predictions=pred_str, references=label_str))
         except ZeroDivisionError as e:
-            metrics.update(dict(bleu="nan"))
-        try:
-            metrics.update(meteor_metric.compute(predictions=pred_str, references=label_str))
-        except ZeroDivisionError as e:
-            metrics.update(dict(meteor="nan"))
+            pass
         return metrics
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

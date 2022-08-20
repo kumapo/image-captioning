@@ -16,53 +16,6 @@ from .utils import (
     save_args
 )
 
-# import sys
-# def hook(type, value, tb):
-#     if hasattr(sys, 'ps1') or not sys.stderr.isatty():
-#         sys.__excepthook__(type, value, tb)
-#     else:
-#         import traceback, pdb
-#         traceback.print_exception(type, value, tb)
-#         print()
-#         pdb.pm()
-# sys.excepthook = hook
-
-# def torch_default_data_collator(features):
-#     from collections.abc import Mapping
-#     import torch
-
-#     if not isinstance(features[0], Mapping):
-#         features = [vars(f) for f in features]
-#     first = features[0]
-#     batch = {}
-
-#     # Special handling for labels.
-#     # Ensure that tensor is created with the correct type
-#     # (it should be automatically the case, but let's make sure of it.)
-#     if "label" in first and first["label"] is not None:
-#         label = first["label"].item() if isinstance(first["label"], torch.Tensor) else first["label"]
-#         dtype = torch.long if isinstance(label, int) else torch.float
-#         batch["labels"] = torch.tensor([f["label"] for f in features], dtype=dtype)
-#     elif "label_ids" in first and first["label_ids"] is not None:
-#         if isinstance(first["label_ids"], torch.Tensor):
-#             batch["labels"] = torch.stack([f["label_ids"] for f in features])
-#         else:
-#             dtype = torch.long if type(first["label_ids"][0]) is int else torch.float
-#             batch["labels"] = torch.tensor([f["label_ids"] for f in features], dtype=dtype)
-
-#     # Handling of all other possible keys.
-#     # Again, we will use the first element to figure out which key/values are not None for this model.
-#     for k, v in first.items():
-#         if k not in ("label", "label_ids") and v is not None and not isinstance(v, str):
-#             if isinstance(v, torch.Tensor):
-#                 batch[k] = torch.stack([f[k] for f in features])
-#             else:
-#                 batch_feature = [torch.stack(f[k]) for f in features]
-#                 batch_feature = torch.stack(batch_feature)
-#                 batch[k] = torch.tensor(batch_feature)
-
-#     return batch
-
 
 def main(args: argparse.Namespace):
     if not os.path.exists(args.output_dir):
@@ -172,6 +125,7 @@ def main(args: argparse.Namespace):
     )
 
     bleu = evaluate.load("bleu")
+    rouge = evaluate.load("rouge")
     meteor = evaluate.load("meteor")
     def compute_metrics(pred):
         labels_ids = pred.label_ids
@@ -182,12 +136,10 @@ def main(args: argparse.Namespace):
         metrics = {}
         try:
             metrics.update(bleu.compute(predictions=pred_str, references=label_str))
-        except ZeroDivisionError as e:
-            metrics.update(dict(bleu="nan"))
-        try:
+            metrics.update(rouge.compute(predictions=pred_str, references=label_str))
             metrics.update(meteor.compute(predictions=pred_str, references=label_str))
         except ZeroDivisionError as e:
-            metrics.update(dict(meteor="nan"))
+            pass
         return metrics
 
     # instantiate trainer
