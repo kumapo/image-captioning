@@ -36,25 +36,32 @@ def main(args: argparse.Namespace):
         "kumapo/coco_dataset_script", "2017",
         data_dir=str(args.test_data_dir), split=args.test_data_split, streaming=True
     )
-
     # https://github.com/huggingface/datasets/issues/4675
-    def preprocess_function(batch):
+    def preprocess_function(examples):
+        do_padding = False if tokenizer.pad_token_id is None else True
         # prepare image (i.e. resize + normalize)
         pixel_values = feature_extractor(
-            [PIL.Image.open(path).convert("RGB") for path in batch['image_path']],
+            [PIL.Image.open(path).convert("RGB") for path in examples['image_path']],
             return_tensors="np"
         ).pixel_values
         # add labels (input_ids) by encoding the text
         encoded = tokenizer(
-            [label for label in batch['caption']], 
-            padding="max_length",
+            [label for label in examples['caption']], 
+            padding="max_length" if do_padding else "do_not_pad",
             max_length=args.max_sequence_length,
+            truncation=False if do_padding else True,
             return_tensors="np",
             return_length=True
         )
-        del batch
-        # important: make sure that PAD tokens are ignored by the loss function
-        encoded.input_ids[encoded.input_ids == tokenizer.pad_token_id] = -100
+        del examples
+        if do_padding:
+            # important: make sure that PAD tokens are ignored by the loss function
+            encoded.input_ids[encoded.input_ids == tokenizer.pad_token_id] = -100
+        else:
+            encoded.input_ids = [
+                input_ids + ([-100] * (args.max_sequence_length - len(input_ids)))
+                for input_ids in encoded.input_ids
+            ]
         return {
             "pixel_values": pixel_values.squeeze(),
             "labels": encoded.input_ids,
@@ -103,7 +110,11 @@ def main(args: argparse.Namespace):
         labels_ids = pred.label_ids
         pred_ids = pred.predictions
         pred_str = tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
-        labels_ids[labels_ids == -100] = tokenizer.pad_token_id
+        if tokenizer.pad_token_id is not None:
+            labels_ids[labels_ids == -100] = tokenizer.pad_token_id
+        else:
+            # special tokens are skipped
+            labels_ids[labels_ids == -100] = tokenizer.eos_token_id
         label_str = tokenizer.batch_decode(labels_ids, skip_special_tokens=True)
         metrics = {}
         try:
