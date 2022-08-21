@@ -8,6 +8,7 @@ import os
 import pathlib
 
 import numpy as np
+import pandas as pd
 
 from tqdm.notebook import tqdm
 from .utils import (
@@ -15,17 +16,18 @@ from .utils import (
     save_args
 )
 
+
 def main(args: argparse.Namespace):
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
     print('train: args=%s' % args.__dict__)
     save_args(args, args.output_dir / 'train_args.json')
 
-    feature_extractor = transformers.DeiTFeatureExtractor.from_pretrained(args.encoder_model_name_or_path)
-    tokenizer = transformers.ElectraTokenizer.from_pretrained(args.decoder_model_name_or_path)
     model = transformers.VisionEncoderDecoderModel.from_encoder_decoder_pretrained(
         args.encoder_model_name_or_path, args.decoder_model_name_or_path
     )
+    feature_extractor = transformers.AutoFeatureExtractor.from_pretrained(args.encoder_model_name_or_path)
+    tokenizer = transformers.AutoTokenizer.from_pretrained(args.decoder_model_name_or_path)
     model.config.decoder_start_token_id = tokenizer.cls_token_id
     model.config.pad_token_id = tokenizer.pad_token_id
 
@@ -58,18 +60,20 @@ def main(args: argparse.Namespace):
         return {
             "pixel_values": pixel_values.squeeze(),
             "labels": encoded.input_ids,
-            "length": encoded.length
+            # "length": encoded.length
         }
 
     train_dataset = train_dataset.map(
         preprocess_function,
         batched=True,
-        remove_columns=["image_path","caption"]
+        remove_columns=["image_path", "caption", 'image_id', 'width', 'file_name', 'coco_url', 'caption_id', 'height']
     )
     eval_dataset = eval_dataset.map(
         preprocess_function,
         batched=True,
-        remove_columns=["image_path","caption"]
+        # batch_size=args.valid_batch_size,
+        # writer_batch_size=args.valid_batch_size,
+        remove_columns=["image_path", "caption", 'image_id', 'width', 'file_name', 'coco_url', 'caption_id', 'height']
     )
     # train_dataloader = torch.utils.data.DataLoader(
     #     # https://github.com/huggingface/datasets/discussions/2577
@@ -85,7 +89,16 @@ def main(args: argparse.Namespace):
     #     num_workers=args.num_workers # above
     # )
     train_dataset = train_dataset.shuffle(seed=args.random_seed, buffer_size=1000).with_format("torch")
-    eval_dataset = eval_dataset.take(args.num_valid_data).with_format("torch")
+    if 0 < args.num_valid_data:
+        eval_dataset = datasets.Dataset.from_dict(
+            eval_dataset._head(args.num_valid_data),
+            features=datasets.Features({
+                "pixel_values": datasets.Array3D(shape=(3, 224, 224), dtype='float32'),
+                "labels": datasets.Sequence(feature=datasets.Value(dtype='int32'), length=args.max_sequence_length)
+            })
+        ).with_format("torch")
+    else:
+        eval_dataset = eval_dataset.with_format("torch")
 
     max_steps = (args.num_train_epochs * args.num_train_data) // args.train_batch_size
     print("max_steps: ", max_steps)
@@ -98,7 +111,7 @@ def main(args: argparse.Namespace):
         evaluation_strategy="steps",
         per_device_train_batch_size=args.train_batch_size,
         per_device_eval_batch_size=args.valid_batch_size,
-        fp16=False if args.debug else not args.no_fp16, 
+        fp16=not args.no_fp16 if not args.debug else False,
         output_dir=args.output_dir,
         logging_steps=300,
         save_steps=300,
@@ -106,12 +119,13 @@ def main(args: argparse.Namespace):
         save_total_limit=1,
         load_best_model_at_end=True,
         metric_for_best_model='eval_loss',
-        # dataloader_num_workers=args.num_workers,
+        dataloader_num_workers=args.num_workers if not args.debug else 0,
         report_to="tensorboard",
         seed=args.random_seed
     )
 
     bleu = evaluate.load("bleu")
+    rouge = evaluate.load("rouge")
     meteor = evaluate.load("meteor")
     def compute_metrics(pred):
         labels_ids = pred.label_ids
@@ -122,12 +136,10 @@ def main(args: argparse.Namespace):
         metrics = {}
         try:
             metrics.update(bleu.compute(predictions=pred_str, references=label_str))
-        except ZeroDivisionError as e:
-            metrics.update(dict(bleu="nan"))
-        try:
+            metrics.update(rouge.compute(predictions=pred_str, references=label_str))
             metrics.update(meteor.compute(predictions=pred_str, references=label_str))
         except ZeroDivisionError as e:
-            metrics.update(dict(meteor="nan"))
+            pass
         return metrics
 
     # instantiate trainer
@@ -142,31 +154,48 @@ def main(args: argparse.Namespace):
     )
     trainer.train()
 
+    # evaluate
+    training_args = transformers.Seq2SeqTrainingArguments(
+        predict_with_generate=True,
+        per_device_eval_batch_size=args.valid_batch_size,
+        fp16=not args.no_fp16 if not args.debug else False,
+        output_dir=args.output_dir,
+        report_to="tensorboard",
+        seed=args.random_seed
+    )
+    trainer = transformers.Seq2SeqTrainer(
+        model=model,
+        tokenizer=tokenizer,
+        args=training_args,
+        compute_metrics=compute_metrics,
+        eval_dataset=eval_dataset,
+        data_collator=transformers.default_data_collator,
+    )
     # https://github.com/huggingface/transformers/blob/v4.21.1/src/transformers/generation_utils.py#L845
     gen_kwargs = dict(
         do_sample=True, 
         max_length=args.max_sequence_length, 
         top_k=50, 
-        top_p=0.95, 
+        top_p=0.9, 
         num_return_sequences=1
     )
-    # evaluate
     metrics = trainer.evaluate(eval_dataset, **gen_kwargs)
     print("Validation metrics:", metrics)
 
     # prediction
-    pred = trainer.predict(eval_dataset.take(3).with_format("torch"), **gen_kwargs)
-    labels_ids = pred.label_ids
-    pred_ids = pred.predictions
-    pred_str = tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
-    pred_str = [pred for pred in pred_str]
-    labels_ids[labels_ids == -100] = tokenizer.pad_token_id
-    label_str = tokenizer.batch_decode(labels_ids, skip_special_tokens=True)
-    print("Validation predictions:", pred_str)
-    print("Validation labels:", label_str)
+    # pred = trainer.predict(eval_dataset, **gen_kwargs)
+    # labels_ids = pred.label_ids
+    # pred_ids = pred.predictions
+    # pred_str = tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
+    # pred_str = [pred for pred in pred_str]
+    # labels_ids[labels_ids == -100] = tokenizer.pad_token_id
+    # label_str = tokenizer.batch_decode(labels_ids, skip_special_tokens=True)
+    # print("Validation predictions:", pred_str)
+    # print("Validation labels:", label_str)
 
     # save finally
     model.save_pretrained(args.output_dir)
+    feature_extractor.save_pretrained(args.output_dir)
     return
 
 
@@ -202,9 +231,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--valid_batch_size", default=32, type=int, help=""
     )
-    # parser.add_argument(
-    #     "--num_workers", default=1, type=int, help=""
-    # )
+    parser.add_argument(
+        "--num_workers", default=2, type=int, help=""
+    )
     parser.add_argument(
         "--no_fp16", action="store_true", help=""
     )

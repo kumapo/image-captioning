@@ -10,6 +10,8 @@ datasets = "*"
 torch = "*"
 pillow = "*"
 nltk = "*"
+tensorboardx = "*"
+rouge-score = "*"
 
 [dev-packages]
 kaggle = "*"
