@@ -28,8 +28,15 @@ def main(args: argparse.Namespace):
     )
     feature_extractor = transformers.AutoFeatureExtractor.from_pretrained(args.encoder_model_name_or_path)
     tokenizer = transformers.AutoTokenizer.from_pretrained(args.decoder_model_name_or_path)
-    model.config.decoder_start_token_id = tokenizer.cls_token_id
-    model.config.pad_token_id = tokenizer.pad_token_id
+    if tokenizer.cls_token_id is not None:
+        model.config.decoder_start_token_id = tokenizer.cls_token_id
+    else:
+        model.config.decoder_start_token_id = tokenizer.bos_token_id
+    if tokenizer.pad_token_id is not None:
+        model.config.pad_token_id = tokenizer.pad_token_id
+    else:
+        # https://github.com/huggingface/transformers/issues/7135#issuecomment-693524590
+        model.config.pad_token_id = tokenizer.eos_token_id
 
     train_dataset = datasets.load_dataset(
         "kumapo/coco_dataset_script", "2017", 
@@ -41,6 +48,7 @@ def main(args: argparse.Namespace):
     )
     # https://github.com/huggingface/datasets/issues/4675
     def preprocess_function(examples):
+        do_padding = False if tokenizer.pad_token_id is None else True
         # prepare image (i.e. resize + normalize)
         pixel_values = feature_extractor(
             [PIL.Image.open(path).convert("RGB") for path in examples['image_path']],
@@ -49,14 +57,21 @@ def main(args: argparse.Namespace):
         # add labels (input_ids) by encoding the text
         encoded = tokenizer(
             [label for label in examples['caption']], 
-            padding="max_length",
+            padding="max_length" if do_padding else "do_not_pad",
             max_length=args.max_sequence_length,
+            truncation=True,
             return_tensors="np",
             return_length=True
         )
         del examples
-        # important: make sure that PAD tokens are ignored by the loss function
-        encoded.input_ids[encoded.input_ids == tokenizer.pad_token_id] = -100
+        if do_padding:
+            # important: make sure that PAD tokens are ignored by the loss function
+            encoded.input_ids[encoded.input_ids == tokenizer.pad_token_id] = -100
+        else:
+            encoded.input_ids = [
+                input_ids + ([-100] * (args.max_sequence_length - len(input_ids)))
+                for input_ids in encoded.input_ids
+            ]
         return {
             "pixel_values": pixel_values.squeeze(),
             "labels": encoded.input_ids,
@@ -131,7 +146,11 @@ def main(args: argparse.Namespace):
         labels_ids = pred.label_ids
         pred_ids = pred.predictions
         pred_str = tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
-        labels_ids[labels_ids == -100] = tokenizer.pad_token_id
+        if tokenizer.pad_token_id is not None:
+            labels_ids[labels_ids == -100] = tokenizer.pad_token_id
+        else:
+            # special tokens are skipped
+            labels_ids[labels_ids == -100] = tokenizer.eos_token_id
         label_str = tokenizer.batch_decode(labels_ids, skip_special_tokens=True)
         metrics = {}
         try:
@@ -244,7 +263,7 @@ if __name__ == "__main__":
         "--num_train_data", default=10000, type=int, help="number of items to train on dataset."
     )
     parser.add_argument(
-        "--num_valid_data", default=2000, type=int, help="number of items to evaluate on dataset."
+        "--num_valid_data", default=1000, type=int, help="number of items to evaluate on dataset."
     )
     parser.add_argument(
         "--debug", action="store_true",
