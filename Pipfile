@@ -12,6 +12,8 @@ pillow = "*"
 nltk = "*"
 tensorboardx = "*"
 rouge-score = "*"
+fugashi = "*"
+unidic-lite = "*"
 
 [dev-packages]
 kaggle = "*"

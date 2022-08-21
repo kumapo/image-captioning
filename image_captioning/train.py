@@ -39,11 +39,11 @@ def main(args: argparse.Namespace):
         model.config.pad_token_id = tokenizer.eos_token_id
 
     train_dataset = datasets.load_dataset(
-        "kumapo/coco_dataset_script", "2017", 
+        "kumapo/stair_captions_dataset_script", "2014", 
         data_dir=str(args.train_data_dir), split="train", streaming=True
     )
     eval_dataset = datasets.load_dataset(
-        "kumapo/coco_dataset_script", "2017",
+        "kumapo/stair_captions_dataset_script", "2014",
         data_dir=str(args.valid_data_dir), split="validation", streaming=True
     )
     # https://github.com/huggingface/datasets/issues/4675
@@ -215,16 +215,17 @@ def main(args: argparse.Namespace):
     # save finally
     model.save_pretrained(args.output_dir)
     feature_extractor.save_pretrained(args.output_dir)
+    tokenizer.save_pretrained(args.output_dir)
     return
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--train_data_dir", default='../input/coco-2017-train/', type=pathlib.Path
+        "--train_data_dir", default='../input/coco-2014-train/', type=pathlib.Path
     )
     parser.add_argument(
-        "--valid_data_dir", default='../input/coco-2017-val/', type=pathlib.Path
+        "--valid_data_dir", default='../input/coco-2014-val/', type=pathlib.Path
     )
     parser.add_argument(
         "--output_dir", default=pathlib.Path('output'), type=pathlib.Path, help=""
@@ -233,7 +234,7 @@ if __name__ == "__main__":
         "--encoder_model_name_or_path", default="microsoft/swin-base-patch4-window7-224-in22k", type=str, help=""
     )
     parser.add_argument(
-        "--decoder_model_name_or_path", default="bert-base-uncased", type=str, help=""
+        "--decoder_model_name_or_path", default="cl-tohoku/bert-base-japanese-v2", type=str, help=""
     )
     parser.add_argument(
         "--max_sequence_length", default=64, type=int, help=""

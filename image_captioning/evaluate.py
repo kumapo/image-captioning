@@ -26,14 +26,16 @@ def main(args: argparse.Namespace):
     # load a fine-tuned image captioning model and corresponding tokenizer and feature extractor
     model = transformers.VisionEncoderDecoderModel.from_pretrained(args.encoder_decoder_model_name_or_path)
     feature_extractor = transformers.AutoFeatureExtractor.from_pretrained(
-        args.preprocessor_name_or_path if args.preprocessor_name_or_path is not None else args.encoder_decoder_model_name_or_path
+        args.feature_extractor_name_or_path if args.feature_extractor_name_or_path is not None else args.encoder_decoder_model_name_or_path
     )
-    tokenizer = transformers.AutoTokenizer.from_pretrained(args.encoder_decoder_model_name_or_path)
+    tokenizer = transformers.AutoTokenizer.from_pretrained(
+        args.tokenizer_name_or_path if args.tokenizer_name_or_path is not None else args.encoder_decoder_model_name_or_path
+    )
     # tokenizer = transformers.GPT2TokenizerFast.from_pretrained(args.encoder_decoder_model_name_or_path)
     # feature_extractor = transformers.ViTFeatureExtractor.from_pretrained(args.encoder_decoder_model_name_or_path)
 
     test_dataset = datasets.load_dataset(
-        "kumapo/coco_dataset_script", "2017",
+        "kumapo/stair_captions_dataset_script", "2014",
         data_dir=str(args.test_data_dir), split=args.test_data_split, streaming=True
     )
     # https://github.com/huggingface/datasets/issues/4675
@@ -84,7 +86,8 @@ def main(args: argparse.Namespace):
             test_dataset._head(args.num_test_data),
             features=datasets.Features({
                 "pixel_values": datasets.Array3D(shape=(3, 224, 224), dtype='float32'),
-                "labels": datasets.Sequence(feature=datasets.Value(dtype='int32'), length=args.max_sequence_length)
+                "labels": datasets.Sequence(feature=datasets.Value(dtype='int32'), length=args.max_sequence_length),
+                "image_id": datasets.Value(dtype='int64')
             })
         ).with_format("torch")
     else:
@@ -184,10 +187,10 @@ def main(args: argparse.Namespace):
         remove_columns=["pixel_values"],
         drop_last_batch=False
     )
-    evaluation = evaluation._head(
-        args.num_test_data if 0 < args.num_test_data else 5000
-    )
-    eval_df = pd.DataFrame(evaluation)
+    if 0 < args.num_test_data:
+        eval_df = evaluation.to_pandas()
+    else:    
+        eval_df = pd.DataFrame(evaluation._head(5000))
     eval_df.to_csv(args.output_dir / "evaluation.csv")
 
     # prediction
@@ -219,7 +222,10 @@ if __name__ == "__main__":
         "--encoder_decoder_model_name_or_path", default="nlpconnect/vit-gpt2-image-captioning", type=str, help=""
     )
     parser.add_argument(
-        "--preprocessor_name_or_path", default=None, type=str, help=""
+        "--feature_extractor_name_or_path", default=None, type=str, help=""
+    )
+    parser.add_argument(
+        "--tokenizer_name_or_path", default=None, type=str, help=""
     )
     parser.add_argument(
         "--max_sequence_length", default=64, type=int, help=""
