@@ -51,7 +51,7 @@ def main(args: argparse.Namespace):
             [label for label in examples['caption']], 
             padding="max_length" if do_padding else "do_not_pad",
             max_length=args.max_sequence_length,
-            truncation=False if do_padding else True,
+            truncation=True,
             return_tensors="np",
             return_length=True
         )
