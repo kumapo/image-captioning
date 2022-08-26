@@ -128,9 +128,9 @@ def main(args: argparse.Namespace):
         per_device_eval_batch_size=args.valid_batch_size,
         fp16=not args.no_fp16 if not args.debug else False,
         output_dir=args.output_dir,
-        logging_steps=300,
-        save_steps=300,
-        eval_steps=300,
+        eval_steps=args.eval_steps,
+        logging_steps=args.eval_steps,
+        save_steps=args.eval_steps,
         save_total_limit=1,
         load_best_model_at_end=True,
         metric_for_best_model='eval_loss',
@@ -265,6 +265,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--num_valid_data", default=1000, type=int, help="number of items to evaluate on dataset."
+    )
+    parser.add_argument(
+        "--eval_steps", default=2000, type=int, help=""
     )
     parser.add_argument(
         "--debug", action="store_true",
