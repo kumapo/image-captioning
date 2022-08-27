@@ -75,12 +75,6 @@ def main(args: argparse.Namespace):
         batched=True,
         remove_columns=["image_path","caption_id","caption","coco_url","file_name","height","width"]
     )
-    # eval_dataloader = torch.utils.data.DataLoader(
-    #     test_dataset.take(args.num_test_data).with_format("torch"),
-    #     batch_size=args.test_batch_size,
-    #     num_workers=args.num_workers # above
-    # )
-
     if 0 < args.num_test_data:
         test_dataset = datasets.Dataset.from_dict(
             test_dataset._head(args.num_test_data),
@@ -144,7 +138,8 @@ def main(args: argparse.Namespace):
     # and https://note.com/npaka/n/n5d296d8ae26d
     gen_kwargs = dict(
         do_sample=False,
-        max_new_tokens=args.max_new_tokens, 
+        # max_new_tokens=args.max_new_tokens,
+        max_length=args.max_new_tokens + 1, # workaround
         num_beams=5,
         no_repeat_ngram_size=2,
         num_return_sequences=1,
@@ -153,13 +148,13 @@ def main(args: argparse.Namespace):
     # https://github.com/huggingface/transformers/blob/v4.21.1/src/transformers/generation_utils.py#L845
     # gen_kwargs = dict(
     #     do_sample=True, 
-    #     max_length=args.max_sequence_length, 
+    #     max_length=args.max_new_tokens + 1, # workaround
     #     top_k=50, 
     #     top_p=0.9, 
     #     num_return_sequences=1
     # )
     # evaluate
-    metrics = trainer.evaluate(test_dataset, **gen_kwargs)
+    metrics = trainer.evaluate(**gen_kwargs)
     print("Validation metrics:", metrics)
 
     def forward_pass_with_label(batch):
@@ -201,17 +196,6 @@ def main(args: argparse.Namespace):
     else:    
         eval_df = pd.DataFrame(evaluation._head(5000))
     eval_df.to_csv(args.output_dir / "evaluation.csv")
-
-    # prediction
-    # pred = trainer.predict(test_dataset.take(3).with_format("torch"), **gen_kwargs)
-    # labels_ids = pred.label_ids
-    # pred_ids = pred.predictions
-    # pred_str = tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
-    # pred_str = [pred for pred in pred_str]
-    # labels_ids[labels_ids == -100] = tokenizer.pad_token_id
-    # label_str = tokenizer.batch_decode(labels_ids, skip_special_tokens=True)
-    # print("Validation predictions:", pred_str)
-    # print("Validation labels:", label_str)
 
     return
 

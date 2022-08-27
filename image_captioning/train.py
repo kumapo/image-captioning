@@ -190,27 +190,25 @@ def main(args: argparse.Namespace):
         eval_dataset=eval_dataset,
         data_collator=transformers.default_data_collator,
     )
-    # https://github.com/huggingface/transformers/blob/v4.21.1/src/transformers/generation_utils.py#L845
+    # copied from evaluate.py
     gen_kwargs = dict(
-        do_sample=True, 
-        max_length=args.max_sequence_length, 
-        top_k=50, 
-        top_p=0.9, 
-        num_return_sequences=1
+        do_sample=False,
+        # max_new_tokens=args.max_new_tokens,
+        max_length=args.max_new_tokens + 1, # workaround
+        num_beams=5,
+        no_repeat_ngram_size=2,
+        num_return_sequences=1,
+        early_stopping=True
     )
+    # gen_kwargs = dict(
+    #     do_sample=True, 
+    #     max_length=args.max_new_tokens + 1, # workaround
+    #     top_k=50, 
+    #     top_p=0.9, 
+    #     num_return_sequences=1
+    # )
     metrics = trainer.evaluate(eval_dataset, **gen_kwargs)
     print("Validation metrics:", metrics)
-
-    # prediction
-    # pred = trainer.predict(eval_dataset, **gen_kwargs)
-    # labels_ids = pred.label_ids
-    # pred_ids = pred.predictions
-    # pred_str = tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
-    # pred_str = [pred for pred in pred_str]
-    # labels_ids[labels_ids == -100] = tokenizer.pad_token_id
-    # label_str = tokenizer.batch_decode(labels_ids, skip_special_tokens=True)
-    # print("Validation predictions:", pred_str)
-    # print("Validation labels:", label_str)
 
     # save finally
     model.save_pretrained(args.output_dir)
@@ -238,6 +236,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--max_sequence_length", default=64, type=int, help=""
+    )
+    parser.add_argument(
+        "--max_new_tokens", default=16, type=int, help="which ignores the number of tokens in the prompt."
     )
     parser.add_argument(
         "--num_train_epochs", default=1, type=int, help=""
