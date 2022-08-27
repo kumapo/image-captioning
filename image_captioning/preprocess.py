@@ -32,12 +32,8 @@ def main(args: argparse.Namespace):
     model.config.pad_token_id = tokenizer.pad_token_id
 
     train_dataset = datasets.load_dataset(
-        "kumapo/coco_dataset_script", "2017", 
+        "kumapo/stair_captions_dataset_script", "2014", 
         data_dir=str(args.train_data_dir), split="train", streaming=True
-    )
-    eval_dataset = datasets.load_dataset(
-        "kumapo/coco_dataset_script", "2017",
-        data_dir=str(args.valid_data_dir), split="validation", streaming=True
     )
     # https://github.com/huggingface/datasets/issues/4675
     def preprocess_function(examples):
@@ -63,13 +59,6 @@ def main(args: argparse.Namespace):
         batched=True,
         remove_columns=["image_path", "caption", 'image_id', 'width', 'file_name', 'coco_url', 'caption_id', 'height']
     )
-    eval_dataset = eval_dataset.map(
-        preprocess_function,
-        batched=True,
-        # batch_size=args.valid_batch_size,
-        # writer_batch_size=args.valid_batch_size,
-        remove_columns=["image_path", "caption", 'image_id', 'width', 'file_name', 'coco_url', 'caption_id', 'height']
-    )
     train_dataset = datasets.Dataset.from_dict(
         train_dataset._head(args.num_train_data),
         features=datasets.Features({
@@ -78,7 +67,7 @@ def main(args: argparse.Namespace):
         })
     ).with_format("torch")
     train_df = train_dataset = train_dataset.to_pandas()
-    train_df.to_csv(args.output_dir / 'train.csv')
+    train_df.to_csv(args.output_dir / 'preprocessed_train.csv')
 
     return
 
@@ -86,10 +75,10 @@ def main(args: argparse.Namespace):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--train_data_dir", default='../input/coco-2017-train/', type=pathlib.Path
+        "--train_data_dir", default='../input/coco-2014-train/', type=pathlib.Path
     )
     parser.add_argument(
-        "--valid_data_dir", default='../input/coco-2017-val/', type=pathlib.Path
+        "--valid_data_dir", default='../input/coco-2014-val/', type=pathlib.Path
     )
     parser.add_argument(
         "--output_dir", default=pathlib.Path('output'), type=pathlib.Path, help=""
@@ -98,7 +87,7 @@ if __name__ == "__main__":
         "--encoder_model_name_or_path", default="microsoft/swin-base-patch4-window7-224-in22k", type=str, help=""
     )
     parser.add_argument(
-        "--decoder_model_name_or_path", default="bert-base-uncased", type=str, help=""
+        "--decoder_model_name_or_path", default="cl-tohoku/bert-base-japanese-v2", type=str, help=""
     )
     parser.add_argument(
         "--max_sequence_length", default=64, type=int, help=""
@@ -107,10 +96,7 @@ if __name__ == "__main__":
         "--random_seed", default=42, type=int, help="Random seed for determinism."
     )
     parser.add_argument(
-        "--num_train_data", default=118287, type=int, help="number of items to train on dataset."
-    )
-    parser.add_argument(
-        "--num_valid_data", default=2000, type=int, help="number of items to evaluate on dataset."
+        "--num_train_data", default=82783, type=int, help="number of items to train on dataset."
     )
     parser.add_argument(
         "--debug", action="store_true",
