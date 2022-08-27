@@ -140,15 +140,24 @@ def main(args: argparse.Namespace):
         eval_dataset=test_dataset,
         data_collator=transformers.default_data_collator,
     )
-
-    # https://github.com/huggingface/transformers/blob/v4.21.1/src/transformers/generation_utils.py#L845
+    # p140
+    # and https://note.com/npaka/n/n5d296d8ae26d
     gen_kwargs = dict(
-        do_sample=True, 
-        max_length=args.max_sequence_length, 
-        top_k=50, 
-        top_p=0.9, 
-        num_return_sequences=1
+        do_sample=False,
+        max_new_tokens=args.max_new_tokens, 
+        num_beams=5,
+        no_repeat_ngram_size=2,
+        num_return_sequences=1,
+        early_stopping=True
     )
+    # https://github.com/huggingface/transformers/blob/v4.21.1/src/transformers/generation_utils.py#L845
+    # gen_kwargs = dict(
+    #     do_sample=True, 
+    #     max_length=args.max_sequence_length, 
+    #     top_k=50, 
+    #     top_p=0.9, 
+    #     num_return_sequences=1
+    # )
     # evaluate
     metrics = trainer.evaluate(test_dataset, **gen_kwargs)
     print("Validation metrics:", metrics)
@@ -229,6 +238,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--max_sequence_length", default=64, type=int, help=""
+    )
+    parser.add_argument(
+        "--max_new_tokens", default=16, type=int, help="which ignores the number of tokens in the prompt."
     )
     parser.add_argument(
         "--test_batch_size", default=32, type=int, help=""
