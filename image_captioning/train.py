@@ -39,11 +39,11 @@ def main(args: argparse.Namespace):
         model.config.pad_token_id = tokenizer.eos_token_id
 
     train_dataset = datasets.load_dataset(
-        "kumapo/coco_dataset_script", "2017", 
+        "kumapo/stair_captions_dataset_script", "2014", 
         data_dir=str(args.train_data_dir), split="train", streaming=True
     )
     eval_dataset = datasets.load_dataset(
-        "kumapo/coco_dataset_script", "2017",
+        "kumapo/stair_captions_dataset_script", "2014",
         data_dir=str(args.valid_data_dir), split="validation", streaming=True
     )
     # https://github.com/huggingface/datasets/issues/4675
@@ -128,9 +128,9 @@ def main(args: argparse.Namespace):
         per_device_eval_batch_size=args.valid_batch_size,
         fp16=not args.no_fp16 if not args.debug else False,
         output_dir=args.output_dir,
-        logging_steps=300,
-        save_steps=300,
-        eval_steps=300,
+        eval_steps=args.eval_steps,
+        logging_steps=args.eval_steps,
+        save_steps=args.eval_steps,
         save_total_limit=1,
         load_best_model_at_end=True,
         metric_for_best_model='eval_loss',
@@ -190,41 +190,40 @@ def main(args: argparse.Namespace):
         eval_dataset=eval_dataset,
         data_collator=transformers.default_data_collator,
     )
-    # https://github.com/huggingface/transformers/blob/v4.21.1/src/transformers/generation_utils.py#L845
+    # copied from evaluate.py
     gen_kwargs = dict(
-        do_sample=True, 
-        max_length=args.max_sequence_length, 
-        top_k=50, 
-        top_p=0.9, 
-        num_return_sequences=1
+        do_sample=False,
+        # max_new_tokens=args.max_new_tokens,
+        max_length=args.max_new_tokens + 1, # workaround
+        num_beams=5,
+        no_repeat_ngram_size=2,
+        num_return_sequences=1,
+        early_stopping=True
     )
+    # gen_kwargs = dict(
+    #     do_sample=True, 
+    #     max_length=args.max_new_tokens + 1, # workaround
+    #     top_k=50, 
+    #     top_p=0.9, 
+    #     num_return_sequences=1
+    # )
     metrics = trainer.evaluate(eval_dataset, **gen_kwargs)
     print("Validation metrics:", metrics)
-
-    # prediction
-    # pred = trainer.predict(eval_dataset, **gen_kwargs)
-    # labels_ids = pred.label_ids
-    # pred_ids = pred.predictions
-    # pred_str = tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
-    # pred_str = [pred for pred in pred_str]
-    # labels_ids[labels_ids == -100] = tokenizer.pad_token_id
-    # label_str = tokenizer.batch_decode(labels_ids, skip_special_tokens=True)
-    # print("Validation predictions:", pred_str)
-    # print("Validation labels:", label_str)
 
     # save finally
     model.save_pretrained(args.output_dir)
     feature_extractor.save_pretrained(args.output_dir)
+    tokenizer.save_pretrained(args.output_dir)
     return
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--train_data_dir", default='../input/coco-2017-train/', type=pathlib.Path
+        "--train_data_dir", default='../input/coco-2014-train/', type=pathlib.Path
     )
     parser.add_argument(
-        "--valid_data_dir", default='../input/coco-2017-val/', type=pathlib.Path
+        "--valid_data_dir", default='../input/coco-2014-val/', type=pathlib.Path
     )
     parser.add_argument(
         "--output_dir", default=pathlib.Path('output'), type=pathlib.Path, help=""
@@ -233,10 +232,13 @@ if __name__ == "__main__":
         "--encoder_model_name_or_path", default="microsoft/swin-base-patch4-window7-224-in22k", type=str, help=""
     )
     parser.add_argument(
-        "--decoder_model_name_or_path", default="bert-base-uncased", type=str, help=""
+        "--decoder_model_name_or_path", default="cl-tohoku/bert-base-japanese-v2", type=str, help=""
     )
     parser.add_argument(
         "--max_sequence_length", default=64, type=int, help=""
+    )
+    parser.add_argument(
+        "--max_new_tokens", default=16, type=int, help="which ignores the number of tokens in the prompt."
     )
     parser.add_argument(
         "--num_train_epochs", default=1, type=int, help=""
@@ -264,6 +266,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--num_valid_data", default=1000, type=int, help="number of items to evaluate on dataset."
+    )
+    parser.add_argument(
+        "--eval_steps", default=2000, type=int, help=""
     )
     parser.add_argument(
         "--debug", action="store_true",

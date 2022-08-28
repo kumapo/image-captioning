@@ -27,7 +27,7 @@ def main(args: argparse.Namespace):
     tokenizer = transformers.AutoTokenizer.from_pretrained(args.decoder_model_name_or_path)
 
     train_dataset = datasets.load_dataset(
-        "kumapo/coco_dataset_script", "2017", 
+        "kumapo/stair_captions_dataset_script", "2014", 
         data_dir=str(args.train_data_dir), split="train", streaming=True
     )
     # https://github.com/huggingface/datasets/issues/4675
@@ -70,7 +70,7 @@ def main(args: argparse.Namespace):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--train_data_dir", default='../input/coco-2017-train/', type=pathlib.Path
+        "--train_data_dir", default='../input/coco-2014-train/', type=pathlib.Path
     )
     parser.add_argument(
         "--output_dir", default=pathlib.Path('output'), type=pathlib.Path, help=""
@@ -79,7 +79,7 @@ if __name__ == "__main__":
         "--encoder_model_name_or_path", default="microsoft/swin-base-patch4-window7-224-in22k", type=str, help=""
     )
     parser.add_argument(
-        "--decoder_model_name_or_path", default="bert-base-uncased", type=str, help=""
+        "--decoder_model_name_or_path", default="cl-tohoku/bert-base-japanese-v2", type=str, help=""
     )
     parser.add_argument(
         "--max_sequence_length", default=64, type=int, help=""
@@ -88,7 +88,7 @@ if __name__ == "__main__":
         "--random_seed", default=42, type=int, help="Random seed for determinism."
     )
     parser.add_argument(
-        "--num_train_data", default=118287, type=int, help="number of items to train on dataset."
+        "--num_train_data", default=82783, type=int, help="number of items to train on dataset."
     )
     parser.add_argument(
         "--debug", action="store_true",

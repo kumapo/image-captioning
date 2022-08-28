@@ -28,12 +28,14 @@ def main(args: argparse.Namespace):
     feature_extractor = transformers.AutoFeatureExtractor.from_pretrained(
         args.feature_extractor_name_or_path if args.feature_extractor_name_or_path is not None else args.encoder_decoder_model_name_or_path
     )
-    tokenizer = transformers.AutoTokenizer.from_pretrained(args.encoder_decoder_model_name_or_path)
+    tokenizer = transformers.AutoTokenizer.from_pretrained(
+        args.tokenizer_name_or_path if args.tokenizer_name_or_path is not None else args.encoder_decoder_model_name_or_path
+    )
     # tokenizer = transformers.GPT2TokenizerFast.from_pretrained(args.encoder_decoder_model_name_or_path)
     # feature_extractor = transformers.ViTFeatureExtractor.from_pretrained(args.encoder_decoder_model_name_or_path)
 
     test_dataset = datasets.load_dataset(
-        "kumapo/coco_dataset_script", "2017",
+        "kumapo/stair_captions_dataset_script", "2014",
         data_dir=str(args.test_data_dir), split=args.test_data_split, streaming=True
     )
     # https://github.com/huggingface/datasets/issues/4675
@@ -49,7 +51,7 @@ def main(args: argparse.Namespace):
             [label for label in examples['caption']], 
             padding="max_length" if do_padding else "do_not_pad",
             max_length=args.max_sequence_length,
-            truncation=False if do_padding else True,
+            truncation=True,
             return_tensors="np",
             return_length=True
         )
@@ -73,18 +75,13 @@ def main(args: argparse.Namespace):
         batched=True,
         remove_columns=["image_path","caption_id","caption","coco_url","file_name","height","width"]
     )
-    # eval_dataloader = torch.utils.data.DataLoader(
-    #     test_dataset.take(args.num_test_data).with_format("torch"),
-    #     batch_size=args.test_batch_size,
-    #     num_workers=args.num_workers # above
-    # )
-
     if 0 < args.num_test_data:
         test_dataset = datasets.Dataset.from_dict(
             test_dataset._head(args.num_test_data),
             features=datasets.Features({
                 "pixel_values": datasets.Array3D(shape=(3, 224, 224), dtype='float32'),
-                "labels": datasets.Sequence(feature=datasets.Value(dtype='int32'), length=args.max_sequence_length)
+                "labels": datasets.Sequence(feature=datasets.Value(dtype='int32'), length=args.max_sequence_length),
+                "image_id": datasets.Value(dtype='int64')
             })
         ).with_format("torch")
     else:
@@ -137,8 +134,8 @@ def main(args: argparse.Namespace):
         eval_dataset=test_dataset,
         data_collator=transformers.default_data_collator,
     )
-
-    # https://github.com/huggingface/transformers/blob/v4.21.1/src/transformers/generation_utils.py#L845
+    # p140
+    # and https://note.com/npaka/n/n5d296d8ae26d
     gen_kwargs = dict(
         do_sample=False,
         # max_new_tokens=args.max_new_tokens,
@@ -148,8 +145,16 @@ def main(args: argparse.Namespace):
         num_return_sequences=1,
         early_stopping=True
     )
+    # https://github.com/huggingface/transformers/blob/v4.21.1/src/transformers/generation_utils.py#L845
+    # gen_kwargs = dict(
+    #     do_sample=True, 
+    #     max_length=args.max_new_tokens + 1, # workaround
+    #     top_k=50, 
+    #     top_p=0.9, 
+    #     num_return_sequences=1
+    # )
     # evaluate
-    metrics = trainer.evaluate(test_dataset, **gen_kwargs)
+    metrics = trainer.evaluate(**gen_kwargs)
     print("Validation metrics:", metrics)
 
     def forward_pass_with_label(batch):
@@ -186,22 +191,11 @@ def main(args: argparse.Namespace):
         remove_columns=["pixel_values"],
         drop_last_batch=False
     )
-    evaluation = evaluation._head(
-        args.num_test_data if 0 < args.num_test_data else 5000
-    )
-    eval_df = pd.DataFrame(evaluation)
+    if 0 < args.num_test_data:
+        eval_df = evaluation.to_pandas()
+    else:    
+        eval_df = pd.DataFrame(evaluation._head(5000))
     eval_df.to_csv(args.output_dir / "evaluation.csv")
-
-    # prediction
-    # pred = trainer.predict(test_dataset.take(3).with_format("torch"), **gen_kwargs)
-    # labels_ids = pred.label_ids
-    # pred_ids = pred.predictions
-    # pred_str = tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
-    # pred_str = [pred for pred in pred_str]
-    # labels_ids[labels_ids == -100] = tokenizer.pad_token_id
-    # label_str = tokenizer.batch_decode(labels_ids, skip_special_tokens=True)
-    # print("Validation predictions:", pred_str)
-    # print("Validation labels:", label_str)
 
     return
 
@@ -224,10 +218,13 @@ if __name__ == "__main__":
         "--feature_extractor_name_or_path", default=None, type=str, help=""
     )
     parser.add_argument(
+        "--tokenizer_name_or_path", default=None, type=str, help=""
+    )
+    parser.add_argument(
         "--max_sequence_length", default=64, type=int, help=""
     )
     parser.add_argument(
-        "--max_new_tokens", default=16, type=int, help=""
+        "--max_new_tokens", default=16, type=int, help="which ignores the number of tokens in the prompt."
     )
     parser.add_argument(
         "--test_batch_size", default=32, type=int, help=""
