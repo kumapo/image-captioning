@@ -26,7 +26,7 @@ def main(args: argparse.Namespace):
     # load a fine-tuned image captioning model and corresponding tokenizer and feature extractor
     model = transformers.VisionEncoderDecoderModel.from_pretrained(args.encoder_decoder_model_name_or_path)
     feature_extractor = transformers.AutoFeatureExtractor.from_pretrained(
-        args.preprocessor_name_or_path if args.preprocessor_name_or_path is not None else args.encoder_decoder_model_name_or_path
+        args.feature_extractor_name_or_path if args.feature_extractor_name_or_path is not None else args.encoder_decoder_model_name_or_path
     )
     tokenizer = transformers.AutoTokenizer.from_pretrained(args.encoder_decoder_model_name_or_path)
     # tokenizer = transformers.GPT2TokenizerFast.from_pretrained(args.encoder_decoder_model_name_or_path)
@@ -140,11 +140,13 @@ def main(args: argparse.Namespace):
 
     # https://github.com/huggingface/transformers/blob/v4.21.1/src/transformers/generation_utils.py#L845
     gen_kwargs = dict(
-        do_sample=True, 
-        max_length=args.max_sequence_length, 
-        top_k=50, 
-        top_p=0.9, 
-        num_return_sequences=1
+        do_sample=False,
+        # max_new_tokens=args.max_new_tokens,
+        max_length=args.max_new_tokens + 1, # workaround
+        num_beams=5,
+        no_repeat_ngram_size=2,
+        num_return_sequences=1,
+        early_stopping=True
     )
     # evaluate
     metrics = trainer.evaluate(test_dataset, **gen_kwargs)
@@ -219,10 +221,13 @@ if __name__ == "__main__":
         "--encoder_decoder_model_name_or_path", default="nlpconnect/vit-gpt2-image-captioning", type=str, help=""
     )
     parser.add_argument(
-        "--preprocessor_name_or_path", default=None, type=str, help=""
+        "--feature_extractor_name_or_path", default=None, type=str, help=""
     )
     parser.add_argument(
         "--max_sequence_length", default=64, type=int, help=""
+    )
+    parser.add_argument(
+        "--max_new_tokens", default=16, type=int, help=""
     )
     parser.add_argument(
         "--test_batch_size", default=32, type=int, help=""
