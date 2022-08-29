@@ -268,7 +268,7 @@ if __name__ == "__main__":
         "--num_valid_data", default=1000, type=int, help="number of items to evaluate on dataset."
     )
     parser.add_argument(
-        "--eval_steps", default=2000, type=int, help=""
+        "--eval_steps", default=600, type=int, help="steps = num_data // batch_size"
     )
     parser.add_argument(
         "--debug", action="store_true",
