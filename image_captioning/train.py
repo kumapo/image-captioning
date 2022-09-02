@@ -193,8 +193,8 @@ def main(args: argparse.Namespace):
     # copied from evaluate.py
     gen_kwargs = dict(
         do_sample=False,
-        # max_new_tokens=args.max_new_tokens,
-        max_length=args.max_new_tokens + 1, # workaround
+        max_new_tokens=args.max_new_tokens,
+        # max_length=args.max_new_tokens + 1, # workaround
         num_beams=5,
         no_repeat_ngram_size=2,
         num_return_sequences=1,
