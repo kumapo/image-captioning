@@ -93,7 +93,7 @@ def main(args: argparse.Namespace):
         per_device_eval_batch_size=args.test_batch_size,
         fp16=False if args.debug else not args.no_fp16, 
         output_dir=args.output_dir,
-        dataloader_num_workers=args.num_workers,
+        dataloader_num_workers=args.num_workers if not args.debug else 0,
         report_to="tensorboard",
         seed=args.random_seed
     )
@@ -101,8 +101,6 @@ def main(args: argparse.Namespace):
     bleu = evaluate.load("bleu")
     rouge = evaluate.load("rouge")
     meteor = evaluate.load("meteor")
-    # bleu_metric = datasets.load_metric("sacrebleu")
-    # meteor_metric = datasets.load_metric("meteor")
     def compute_metrics(pred):
         labels_ids = pred.label_ids
         pred_ids = pred.predictions
