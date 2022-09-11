@@ -201,7 +201,7 @@ def main(args: argparse.Namespace):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--test_data_dir", default='../input/coco-2017-val/', type=pathlib.Path
+        "--test_data_dir", default='../input/coco-2014-val/', type=pathlib.Path
     )
     parser.add_argument(
         "--test_data_split", default="validation", type=str, help=""
