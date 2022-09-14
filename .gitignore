@@ -1,11 +1,13 @@
 input/
 output/
 .build/
+.DS_Store
 .env
 .kaggle.json
 build.py
 build.sh
 debug.py
+debug.sh
 template.py
 TODO.md
 coco_dataset_script.py
