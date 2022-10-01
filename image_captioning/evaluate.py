@@ -52,9 +52,9 @@ def main(args: argparse.Namespace):
             padding="max_length" if do_padding else "do_not_pad",
             max_length=args.max_sequence_length,
             truncation=True,
-            return_tensors="np",
-            # return_length=True
+            return_tensors="np"
         )
+        image_ids = examples["image_id"]
         del examples
         if do_padding:
             # important: make sure that PAD tokens are ignored by the loss function
@@ -65,27 +65,31 @@ def main(args: argparse.Namespace):
                 for input_ids in encoded.input_ids
             ]
         return {
+            "id": image_ids,
             "pixel_values": pixel_values.squeeze(),
-            "labels": encoded.input_ids,
-            # "length": encoded.length
+            "labels": encoded.input_ids
         }
 
-    test_dataset = test_dataset.map(
-        preprocess_function,
-        batched=True,
-        remove_columns=["image_path","caption_id","caption","coco_url","file_name","height","width"]
-    )
+    removed_columns = ["image_id","image_path","caption_id","caption","coco_url","file_name","height","width"]
     if 0 < args.num_test_data:
         test_dataset = datasets.Dataset.from_dict(
-            test_dataset._head(args.num_test_data),
+            test_dataset.map(
+                preprocess_function,
+                batched=True,
+                remove_columns=removed_columns
+            )._head(args.num_test_data),
             features=datasets.Features({
+                "id": datasets.Value(dtype='int64'),
                 "pixel_values": datasets.Array3D(shape=(3, 224, 224), dtype='float32'),
-                "labels": datasets.Sequence(feature=datasets.Value(dtype='int32'), length=args.max_sequence_length),
-                "image_id": datasets.Value(dtype='int64')
+                "labels": datasets.Sequence(feature=datasets.Value(dtype='int32'), length=args.max_sequence_length)
             })
         ).with_format("torch")
     else:
-        test_dataset = test_dataset.with_format("torch")
+        test_dataset = test_dataset.map(
+            preprocess_function,
+            batched=True,
+            remove_columns=removed_columns
+        ).with_format("torch")
 
     # https://github.com/NielsRogge/Transformers-Tutorials/blob/master/TrOCR/Fine_tune_TrOCR_on_IAM_Handwriting_Database_using_Seq2SeqTrainer.ipynb
     training_args = transformers.Seq2SeqTrainingArguments(
@@ -97,6 +101,9 @@ def main(args: argparse.Namespace):
         report_to="tensorboard",
         seed=args.random_seed
     )
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
+
     # def compute_metrics(pred):
     #     pred_ids = pred.predictions
     #     pred_str = tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
@@ -115,11 +122,7 @@ def main(args: argparse.Namespace):
     #     except ZeroDivisionError as e:
     #         pass
     #     return metrics
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = model.to(device)
-
-    # instantiate trainer
+    # 
     # trainer = transformers.Seq2SeqTrainer(
     #     model=model,
     #     tokenizer=tokenizer,
@@ -155,17 +158,15 @@ def main(args: argparse.Namespace):
             inputs["pixel_values"].to(device),
             **gen_kwargs,
         )
+        # gpt2 tokenizer: https://discuss.huggingface.co/t/bpe-tokenizers-and-spaces-before-words/475
         pred_str = tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
-        # pred_str = [s.replace(" ","") for s in pred_str]
         label_ids = np.array(batch["labels"])
-        del batch
         if tokenizer.pad_token_id is not None:
             label_ids[label_ids == -100] = tokenizer.pad_token_id
         else:
-            # special tokens are skipped
+            # special tokens are going to be skipped
             label_ids[label_ids == -100] = tokenizer.eos_token_id
         label_str = tokenizer.batch_decode(label_ids, skip_special_tokens=True)
-        # label_str = [s.replace(" ","") for s in label_str]
         bleu.add_batch(predictions=pred_str, references=label_str)
         rouge.add_batch(predictions=pred_str, references=label_str)
         meteor.add_batch(predictions=pred_str, references=label_str)
@@ -175,8 +176,10 @@ def main(args: argparse.Namespace):
             loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
             loss = loss_fct(outputs.logits.reshape(-1, model.decoder.config.vocab_size), inputs["labels"].view(-1))
             loss = loss.cpu().numpy().reshape(inputs["labels"].shape[0],-1).sum(axis=1)
-        del inputs
+        ids = np.array(batch["id"]).astype(int) # the type would be either list or tensor
+        del batch, inputs
         return dict(
+            id=ids,
             loss=loss,
             predicted_labels=pred_str,
             labels=label_str
@@ -190,9 +193,14 @@ def main(args: argparse.Namespace):
         drop_last_batch=False
     )
     if 0 < args.num_test_data:
+        # we cannot use DataFrame():
+        # https://github.com/huggingface/datasets/issues/469
         eval_df = evaluation.to_pandas()
-    else:    
-        eval_df = pd.DataFrame(evaluation._head(1000))
+    else:
+        eval_df = pd.concat([
+            pd.DataFrame(_dict, index=[_dict["id"]])
+            for _dict in evaluation
+        ])
     print("Predicted %d data to evaluation.csv" % len(eval_df))
     eval_df.to_csv(args.output_dir / "evaluation.csv")
     
