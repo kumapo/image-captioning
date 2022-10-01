@@ -14,6 +14,8 @@ tensorboardx = "*"
 rouge-score = "*"
 fugashi = "*"
 unidic-lite = "*"
+mecab-python3 = "==1.0.5"
+ipadic = "<2.0"
 
 [dev-packages]
 kaggle = "*"

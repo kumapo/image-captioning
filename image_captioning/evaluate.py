@@ -53,7 +53,7 @@ def main(args: argparse.Namespace):
             max_length=args.max_sequence_length,
             truncation=True,
             return_tensors="np",
-            return_length=True
+            # return_length=True
         )
         del examples
         if do_padding:
@@ -145,7 +145,6 @@ def main(args: argparse.Namespace):
     bleu = evaluate.load("sacrebleu")
     rouge = evaluate.load("rouge")
     meteor = evaluate.load("meteor")
-    num_batches = 0
     def forward_pass_with_label(batch):
         #  Creating a tensor from a list of numpy.ndarrays is extremely slow.
         inputs = {
@@ -157,6 +156,7 @@ def main(args: argparse.Namespace):
             **gen_kwargs,
         )
         pred_str = tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
+        # pred_str = [s.replace(" ","") for s in pred_str]
         label_ids = np.array(batch["labels"])
         del batch
         if tokenizer.pad_token_id is not None:
@@ -165,6 +165,7 @@ def main(args: argparse.Namespace):
             # special tokens are skipped
             label_ids[label_ids == -100] = tokenizer.eos_token_id
         label_str = tokenizer.batch_decode(label_ids, skip_special_tokens=True)
+        # label_str = [s.replace(" ","") for s in label_str]
         bleu.add_batch(predictions=pred_str, references=label_str)
         rouge.add_batch(predictions=pred_str, references=label_str)
         meteor.add_batch(predictions=pred_str, references=label_str)
@@ -175,7 +176,6 @@ def main(args: argparse.Namespace):
             loss = loss_fct(outputs.logits.reshape(-1, model.decoder.config.vocab_size), inputs["labels"].view(-1))
             loss = loss.cpu().numpy().reshape(inputs["labels"].shape[0],-1).sum(axis=1)
         del inputs
-        num_batches = num_batches + 1
         return dict(
             loss=loss,
             predicted_labels=pred_str,
@@ -197,11 +197,10 @@ def main(args: argparse.Namespace):
     eval_df.to_csv(args.output_dir / "evaluation.csv")
     
     metrics = {}
-    metrics.update(bleu.compute(smooth_method="floor", smooth_value=0.1))
-    metrics.update(rouge.compute())
+    metrics.update(bleu.compute(smooth_method="floor", smooth_value=0.1, tokenize='ja-mecab'))
+    metrics.update(rouge.compute(tokenizer=lambda x: tokenizer.tokenize(x)))
     metrics.update(meteor.compute())
     print("Validation metrics:", metrics)
-    print("that is computed with %d batches" % num_batches)
     return
 
 
