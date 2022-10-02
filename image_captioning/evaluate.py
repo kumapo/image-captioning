@@ -158,7 +158,6 @@ def main(args: argparse.Namespace):
             inputs["pixel_values"].to(device),
             **gen_kwargs,
         )
-        # gpt2 tokenizer: https://discuss.huggingface.co/t/bpe-tokenizers-and-spaces-before-words/475
         pred_str = tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
         label_ids = np.array(batch["labels"])
         if tokenizer.pad_token_id is not None:

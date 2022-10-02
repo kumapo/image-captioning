@@ -23,12 +23,9 @@ for path, encoded in file_data.items():
 !ln -s /lib/x86_64-linux-gnu/libstdc++.so.6.0.30 /lib/x86_64-linux-gnu/libstdc++.so.6
 !pip install -q git+https://github.com/huggingface/transformers.git@main evaluate datasets==2.4.0 sacrebleu[ja] rouge_score fugashi unidic-lite
 
-# !python -m image_captioning.preprocess
-#    --encoder_model_name_or_path "microsoft/swin-base-patch4-window7-224-in22k" \
-#    --decoder_model_name_or_path "rinna/japanese-gpt2-medium"
 
 # !python -m image_captioning.train \
-#    --encoder_model_name_or_path "google/vit-base-patch16-224" \
+#    --encoder_model_name_or_path "microsoft/swin-base-patch4-window7-224-in22k" \
 #    --decoder_model_name_or_path "rinna/japanese-gpt2-medium" \
 #     --num_train_data 80000 \
 #     --num_valid_data 1000 \
@@ -36,6 +33,5 @@ for path, encoded in file_data.items():
 #     --eval_steps 1200
 
 !python -m image_captioning.evaluate \
-   --encoder_decoder_model_name_or_path ../input/image-captioning-v224/output \
-   --num_test_data 32 \
+   --encoder_decoder_model_name_or_path "kumapo/swin-gpt2-ja-image-captioning" \
    --num_workers 0
