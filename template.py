@@ -32,6 +32,5 @@ for path, encoded in file_data.items():
 #     --train_batch_size 16 \
 #     --eval_steps 1200
 
-!python -m image_captioning.evaluate \
-   --encoder_decoder_model_name_or_path "kumapo/swin-gpt2-ja-image-captioning" \
-   --num_workers 0
+!python -m image_captioning.predict \
+   --encoder_decoder_model_name_or_path "kumapo/swin-gpt2-ja-image-captioning"
