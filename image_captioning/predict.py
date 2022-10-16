@@ -115,6 +115,7 @@ def main(args: argparse.Namespace):
             k:torch.tensor(np.array(v)).to(device) for k,v in batch.items()
             if k in ("pixel_values", "labels")
         }
+        inputs["pixel_values"] = inputs["pixel_values"].float()
         pred_ids = model.generate(
             inputs["pixel_values"].to(device),
             **gen_kwargs,
