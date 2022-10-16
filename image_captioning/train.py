@@ -139,7 +139,7 @@ def main(args: argparse.Namespace):
         seed=args.random_seed
     )
 
-    bleu = evaluate.load("bleu")
+    bleu = evaluate.load("sacrebleu")
     rouge = evaluate.load("rouge")
     meteor = evaluate.load("meteor")
     def compute_metrics(pred):
@@ -153,12 +153,15 @@ def main(args: argparse.Namespace):
             labels_ids[labels_ids == -100] = tokenizer.eos_token_id
         label_str = tokenizer.batch_decode(labels_ids, skip_special_tokens=True)
         metrics = {}
-        try:
-            metrics.update(bleu.compute(predictions=pred_str, references=label_str))
-            metrics.update(rouge.compute(predictions=pred_str, references=label_str))
-            metrics.update(meteor.compute(predictions=pred_str, references=label_str))
-        except ZeroDivisionError as e:
-            pass
+        metrics.update(bleu.compute(
+            predictions=pred_str, references=label_str,
+            smooth_method="floor", smooth_value=0.1, tokenize='ja-mecab'
+        ))
+        metrics.update(rouge.compute(
+            predictions=pred_str, references=label_str,
+            tokenizer=lambda x: tokenizer.tokenize(x)
+        ))
+        metrics.update(meteor.compute(predictions=pred_str, references=label_str))
         return metrics
 
     # instantiate trainer
