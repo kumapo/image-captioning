@@ -112,7 +112,7 @@ def main(args: argparse.Namespace):
         metrics = {}
         metrics.update(bleu.compute(
             predictions=pred_str, references=label_str,
-            smooth_method="floor", smooth_value=0.1
+            smooth_method="floor", smooth_value=0.1, tokenize='ja-mecab'
         ))
         metrics.update(rouge.compute(
             predictions=pred_str, references=label_str,
