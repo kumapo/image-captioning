@@ -33,6 +33,6 @@ for path, encoded in file_data.items():
 #     --eval_steps 1200
 
 !python -m image_captioning.evaluate \
-   --encoder_decoder_model_name_or_path ../input/image-captioning-v224 \
+   --encoder_decoder_model_name_or_path "kumapo/vit-gpt2-ja-image-captioning" \
    --num_workers 0 \
    --num_test_data 5000

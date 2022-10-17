@@ -20,10 +20,7 @@ Image captioning with huggingface's VisionEncoderDecoderModel.
 ### [kumapo/swin-gpt2-ja-image-captioning](https://huggingface.co/kumapo/swin-gpt2-ja-image-captioning)
 
 ```
-Validation metrics: {'eval_loss': 1.958005666732788, 
-'eval_bleu': 0.0, 'eval_precisions': [0.002952430324125503, 0.0, 0.0, 0.0], 'eval_brevity_penalty': 0.9956204701428368, 'eval_length_ratio': 0.9956300323446425, 'eval_translation_length': 202545, 'eval_reference_length': 203434, 
-'eval_rouge1': 0.008349651533534636, 'eval_rouge2': 9.71097504773191e-05, 'eval_rougeL': 0.008327631368565637, 'eval_rougeLsum': 0.008334403186516591, 
-'eval_meteor': 0.0014763973928500888, 'eval_runtime': 28902.4232, 'eval_samples_per_second': 7.007, 'eval_steps_per_second': 0.219}
+Validation metrics: {'eval_loss': 1.9995830059051514, 'eval_score': 14.845372889809905, 'eval_counts': [5353, 2245, 954, 477], 'eval_totals': [10740, 9740, 8740, 7740], 'eval_precisions': [49.84171322160149, 23.04928131416838, 10.915331807780321, 6.162790697674419], 'eval_bp': 0.8903790505341749, 'eval_sys_len': 10740, 'eval_ref_len': 11987, 'eval_rouge1': 0.37680551175187166, 'eval_rouge2': 0.14616265481773555, 'eval_rougeL': 0.350276990789434, 'eval_rougeLsum': 0.350436066526591, 'eval_meteor': 0.0005, 'eval_runtime': 124.1608, 'eval_samples_per_second': 8.054, 'eval_steps_per_second': 0.258}
 ```
 
 ### [kumapo/vit-gpt2-ja-image-captioning](https://huggingface.co/kumapo/vit-gpt2-ja-image-captioning)
@@ -38,10 +35,7 @@ Validation metrics: {'eval_loss': 4.004899501800537,
 ### swin-transformer and bert-base-japanese-v2
 
 ```
-Validation metrics: {'eval_loss': 1.800550103187561, 
-'eval_bleu': 0.037993467956122476, 'eval_precisions': [0.16161329932936622, 0.060897745961110576, 0.022454644592049173, 0.009428687608010572], 'eval_brevity_penalty': 1.0, 'eval_length_ratio': 3.6875653082549635, 'eval_translation_length': 42348, 'eval_reference_length': 11484, 
-'eval_rouge1': 0.006416666666666667, 'eval_rouge2': 0.0, 'eval_rougeL': 0.006166666666666667, 'eval_rougeLsum': 0.006333333333333334, 
-'eval_meteor': 0.321189422057437, 'eval_runtime': 57.7106, 'eval_samples_per_second': 17.328, 'eval_steps_per_second': 0.554}
+Validation metrics: {'eval_loss': 1.6615628004074097, 'eval_score': 15.270138656859801, 'eval_counts': [6013, 2574, 1113, 542], 'eval_totals': [13002, 12002, 11002, 10002], 'eval_precisions': [46.24673127211198, 21.446425595734045, 10.116342483184875, 5.4189162167566485], 'eval_bp': 1.0, 'eval_sys_len': 13002, 'eval_ref_len': 12193, 'eval_rouge1': 0.46499010155295006, 'eval_rouge2': 0.2229896169710825, 'eval_rougeL': 0.40137460532380376, 'eval_rougeLsum': 0.4018381882765504, 'eval_meteor': 0.40398952495284224, 'eval_runtime': 54.0277, 'eval_samples_per_second': 18.509, 'eval_steps_per_second': 0.592}
 ```
 
 ### swin-transformer and bert-base
