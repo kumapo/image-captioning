@@ -26,10 +26,7 @@ Validation metrics: {'eval_loss': 1.9995830059051514, 'eval_score': 14.845372889
 ### [kumapo/vit-gpt2-ja-image-captioning](https://huggingface.co/kumapo/vit-gpt2-ja-image-captioning)
 
 ```
-Validation metrics: {'eval_loss': 4.004899501800537, 
-'eval_bleu': 0.0, 'eval_precisions': [0.016446505117662498, 0.0011479738261967627, 0.0012748597654258032, 0.0], 'eval_brevity_penalty': 0.46042275320713894, 'eval_length_ratio': 0.5631866778341627, 'eval_translation_length': 34293, 'eval_reference_length': 60891, 
-'eval_rouge1': 0.0, 'eval_rouge2': 0.0, 'eval_rougeL': 0.0, 'eval_rougeLsum': 0.0, 
-'eval_meteor': 0.003167212891240735, 'eval_runtime': 8232.0141, 'eval_samples_per_second': 3.108, 'eval_steps_per_second': 0.097}
+Validation metrics: {'eval_loss': 2.059309720993042, 'eval_score': 14.541195244037787, 'eval_counts': [5289, 2216, 925, 464], 'eval_totals': [10709, 9709, 8709, 7709], 'eval_precisions': [49.38836492669717, 22.82418374703883, 10.621196463428637, 6.018938902581398], 'eval_bp': 0.8875069968895519, 'eval_sys_len': 10709, 'eval_ref_len': 11987, 'eval_rouge1': 0.3721238135778884, 'eval_rouge2': 0.1433057833911217, 'eval_rougeL': 0.3486764739133251, 'eval_rougeLsum': 0.3488526198999652, 'eval_meteor': 0.0, 'eval_runtime': 293.0325, 'eval_samples_per_second': 3.413, 'eval_steps_per_second': 0.109}
 ```
 
 ### swin-transformer and bert-base-japanese-v2
