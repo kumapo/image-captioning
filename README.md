@@ -1,6 +1,6 @@
 # Image captioning with vision-encoder-decoder
 
-Image captioning with huggingface's VisionEncoderDecoderModel.
+Image captioning with VisionEncoderDecoderModel from huggingface.
 
 ## Train
 
